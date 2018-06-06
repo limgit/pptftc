@@ -10,10 +10,6 @@ class Project(Base):
 
     id = Column(String, primary_key=True)
     git_url = Column(String)
-    name = Column(String)
-
-    commit_count = Column(Integer)
-    # TODO: overhead related values?
 
 
 class Commit(Base):
