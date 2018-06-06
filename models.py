@@ -15,7 +15,7 @@ class Project(Base):
 class Commit(Base):
     __tablename__ = 'commit'
 
-    project_id = Column(String, ForeignKey('project.id'), primary_key=True)
+    project_id = Column(String, ForeignKey(Project.id), primary_key=True)
     hash = Column(String, primary_key=True)
     timestamp = Column(DateTime)
     added_loc = Column(Integer)
@@ -23,10 +23,10 @@ class Commit(Base):
 
 
 class File(Base):
-    __tablename__ = 'blame'
+    __tablename__ = 'file'
 
-    project_id = Column(String, ForeignKey('project.id'), primary_key=True)
-    commit_hash = Column(String, ForeignKey('commit.hash'), primary_key=True)
+    project_id = Column(String, ForeignKey(Project.id), primary_key=True)
+    commit_hash = Column(String, ForeignKey(Commit.hash), primary_key=True)
     path = Column(String, primary_key=True)
     line_touched_hashes = Column(PickleType)
 
@@ -34,8 +34,8 @@ class File(Base):
 class Test(Base):
     __tablename__ = 'test'
 
-    project_id = Column(String, ForeignKey('project.id'), primary_key=True)
-    commit_hash = Column(String, ForeignKey('commit.hash'), primary_key=True)
+    project_id = Column(String, ForeignKey(Project.id), primary_key=True)
+    commit_hash = Column(String, ForeignKey(Commit.hash), primary_key=True)
     path = Column(String, primary_key=True)
 
     is_passed = Column(Boolean)
@@ -45,10 +45,10 @@ class Test(Base):
 class Coverage(Base):
     __tablename__ = 'coverage'
 
-    project_id = Column(String, ForeignKey('project.id'), primary_key=True)
-    commit_hash = Column(String, ForeignKey('commit.hash'), primary_key=True)
-    tc_path = Column(String, ForeignKey('test.path'), primary_key=True)
-    file_path = Column(String, ForeignKey('file.path'), primary_key=True)
+    project_id = Column(String, ForeignKey(Project.id), primary_key=True)
+    commit_hash = Column(String, ForeignKey(Commit.hash), primary_key=True)
+    tc_path = Column(String, ForeignKey(Test.path), primary_key=True)
+    file_path = Column(String, ForeignKey(File.path), primary_key=True)
 
     lines_covered = Column(PickleType)
     run_time = Column(Integer)
