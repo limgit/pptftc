@@ -27,12 +27,15 @@ def load_projects(path: Path) -> List[Tuple[Text, Text]]:
 def main():
     db_root = Path('db/')
     db_root.mkdir(exist_ok=True)
-    db_path = db_root / '{}.sqlite'.format(int(time.time()))
+    # db_path = db_root / '{}.sqlite'.format(int(time.time()))
+    db_path = db_root / 'db.sqlite'
     projects_path = Path('target_projects.txt')
 
     session = prepare_session(db_path)
     projects = load_projects(projects_path)
-    session.add_all(projects)
+    for project in projects:
+        # insert if do not exist, update if exist.
+        session.merge(project)
     session.commit()
 
     tests = session.query(Test).order_by(Test.project_id)
