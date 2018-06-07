@@ -1,3 +1,4 @@
+import random
 import time
 from pathlib import Path
 from typing import List, Text, Tuple
@@ -34,6 +35,15 @@ def main():
     session.add_all(projects)
     session.commit()
 
+    tests = session.query(Test).order_by(Test.project_id)
+
+    random_order = random.shuffle(tests)
+    runtime_order = session.query(Test).order_by(Test.run_time)
+    loc_order = session.query(Test).order_by(Test.loc)
+
+#    for instance in tests:
+#        print(instance.loc, instance.run_time)
+#        project = session.query(Project).filter(Project.id == instance.project_id).one()
 
 if __name__ == '__main__':
     main()
