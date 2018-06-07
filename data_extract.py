@@ -20,7 +20,7 @@ def prepare_session(path: Path) -> Session:
 
 
 def load_projects(path: Path) -> List[Tuple[Text, Text]]:
-    return [Project(**{'id': line.rsplit('/')[-1].strip(), 'git_url': line})
+    return [Project(id=line.rsplit('/')[-1].strip(), git_url=line)
             for line in path.read_text().split() if line]
 
 
@@ -47,6 +47,7 @@ def main():
 #    for instance in tests:
 #        print(instance.loc, instance.run_time)
 #        project = session.query(Project).filter(Project.id == instance.project_id).one()
+
 
 if __name__ == '__main__':
     main()
