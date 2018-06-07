@@ -40,7 +40,7 @@ class Test(Base):
 
     is_passed = Column(Boolean)
     run_time = Column(Integer)
-
+    loc = Column(Integer)
 
 class Coverage(Base):
     __tablename__ = 'coverage'
