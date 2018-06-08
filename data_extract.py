@@ -6,7 +6,32 @@ from typing import List, Text, Tuple
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+import pygit2
+
 from models import *
+
+
+class DataExtractor:
+    def __init__(self, db_path: Path):
+        engine_url = 'sqlite:///{}'.format(db_path.absolute())
+        engine = create_engine(engine_url)
+
+        self.__session = Session(engine)
+
+    def run(self):
+        clone_root = Path('cloned_projects')
+        clone_root.mkdir(exist_ok=True)
+
+        # 1. Retrieve git project urls
+        projects = self.__session.query(Project).all()
+        for project in projects:
+            project_dir = clone_root / project.id.replace('/', '_')
+            # 2. Clone the repository
+            try:
+                repository = pygit2.clone_repository(project.git_url, str(project_dir))
+            except ValueError:
+                repository = pygit2.Repository(str(project_dir / '.git'))
+
 
 
 def prepare_session(path: Path) -> Session:
@@ -40,6 +65,9 @@ def main():
         # insert if do not exist, update if exist.
         session.merge(project)
     session.commit()
+
+    # Extract the data
+    DataExtractor(db_path).run()
 
     tests = session.query(Test).all()
 
