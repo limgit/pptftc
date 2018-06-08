@@ -20,8 +20,11 @@ def prepare_session(path: Path) -> Session:
 
 
 def load_projects(path: Path) -> List[Tuple[Text, Text]]:
-    return [Project(id=line.rsplit('/')[-1].strip(), git_url=line)
-            for line in path.read_text().split() if line]
+    return [
+        Project(
+            id='/'.join(line.split('/')[-2:]), git_url=line
+        ) for line in path.read_text().split() if line
+    ]
 
 
 def main():
