@@ -31,6 +31,9 @@ class DataExtractor:
 
         self.__session = Session(engine)
 
+        # Define class constants
+        self.__TAG_REFNAME = "refs/tags/pptftc"
+
     def run(self):
         clone_root = Path('cloned_projects')
         clone_root.mkdir(exist_ok=True)
@@ -44,10 +47,16 @@ class DataExtractor:
             # 2. Clone the repository
             try:
                 self.__logger.info("Cloning " + project.id + " into '" + str(project_dir) + "'...")
-                repository = pygit2.clone_repository(project.git_url, str(project_dir))
+                repo = pygit2.clone_repository(project.git_url, str(project_dir))
+                # Create an tag for current HEAD
+                repo.create_reference(self.__TAG_REFNAME, repo.head.target)
             except ValueError:
-                self.__logger.info(str(project_dir) + " exists. Skip cloning.")
-                repository = pygit2.Repository(str(project_dir / '.git'))
+                self.__logger.info("'" + str(project_dir) + "' exists. Skip cloning.")
+                repo = pygit2.Repository(str(project_dir / '.git'))
+            # Checkout the tag
+            repo.checkout(
+                repo.lookup_reference(self.__TAG_REFNAME)
+            )
             # TODO: 3. Run TC and add it to Test Table
             # TODO: 4. Run coverage and add it to Coverage Table
             # TODO: 5. Repeat for previous commit
