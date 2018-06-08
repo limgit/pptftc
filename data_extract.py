@@ -7,12 +7,25 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 import pygit2
+import logging
 
 from models import *
 
 
 class DataExtractor:
     def __init__(self, db_path: Path):
+        # Logger setup
+        self.__logger = logging.getLogger('DataExtractor')
+        self.__logger.setLevel(logging.DEBUG)
+
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.DEBUG)
+        ch.setFormatter(
+            logging.Formatter('[%(levelname)s] %(asctime)s: (%(name)s) %(message)s')
+        )
+        self.__logger.addHandler(ch)
+
+        # Session setup
         engine_url = 'sqlite:///{}'.format(db_path.absolute())
         engine = create_engine(engine_url)
 
@@ -28,10 +41,11 @@ class DataExtractor:
             project_dir = clone_root / project.id.replace('/', '_')
             # 2. Clone the repository
             try:
+                self.__logger.info("Cloning " + project.id + " into '" + str(project_dir) + "'...")
                 repository = pygit2.clone_repository(project.git_url, str(project_dir))
             except ValueError:
+                self.__logger.info(str(project_dir) + " exists. Skip cloning.")
                 repository = pygit2.Repository(str(project_dir / '.git'))
-
 
 
 def prepare_session(path: Path) -> Session:
