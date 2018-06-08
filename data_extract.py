@@ -36,7 +36,9 @@ class DataExtractor:
         clone_root.mkdir(exist_ok=True)
 
         # 1. Retrieve git project urls
+        self.__logger.info("Reading projects list...")
         projects = self.__session.query(Project).all()
+        self.__logger.info("Total " + str(len(projects)) + " projects are read.")
         for project in projects:
             project_dir = clone_root / project.id.replace('/', '_')
             # 2. Clone the repository
@@ -46,6 +48,9 @@ class DataExtractor:
             except ValueError:
                 self.__logger.info(str(project_dir) + " exists. Skip cloning.")
                 repository = pygit2.Repository(str(project_dir / '.git'))
+            # TODO: 3. Run TC and add it to Test Table
+            # TODO: 4. Run coverage and add it to Coverage Table
+            # TODO: 5. Repeat for previous commit
 
 
 def prepare_session(path: Path) -> Session:
