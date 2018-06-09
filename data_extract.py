@@ -40,10 +40,6 @@ def main():
 
     tests = session.query(Test).all()
 
-    random_order = random.shuffle(tests)
-    runtime_order = session.query(Test).order_by(Test.run_time).all()
-    loc_order = session.query(Test).order_by(Test.loc).all()
-
 #    for instance in tests:
 #        print(instance.loc, instance.run_time)
 #        project = session.query(Project).filter(Project.id == instance.project_id).one()
