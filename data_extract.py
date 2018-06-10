@@ -25,6 +25,8 @@ class DataExtractor:
     TEST_COMMAND = 'python -m pytest -q --junit-xml=' + TEST_REPORT_PATH
     COVERAGE_COMMAND = 'python -m pytest -q {} --cov --cov-report=xml:' + COVERAGE_REPORT_PATH
 
+    TAG_REFNAME = "refs/tags/pptftc"
+
     def __init__(self, db_path: Path):
         # Logger setup
         self.__logger = logging.getLogger('DataExtractor')
@@ -43,9 +45,6 @@ class DataExtractor:
 
         self.__session = Session(engine)
 
-        # Define class constants
-        self.__TAG_REFNAME = "refs/tags/pptftc"
-
     def run(self):
         clone_root = Path('cloned_projects')
         clone_root.mkdir(exist_ok=True)
@@ -61,13 +60,13 @@ class DataExtractor:
                 self.__logger.info("Cloning " + project.id + " into '" + str(project_dir) + "'...")
                 repo = pygit2.clone_repository(project.git_url, str(project_dir))
                 # Create an tag for current HEAD
-                repo.create_reference(self.__TAG_REFNAME, repo.head.target)
+                repo.create_reference(DataExtractor.TAG_REFNAME, repo.head.target)
             except ValueError:
                 self.__logger.info("'" + str(project_dir) + "' exists. Skip cloning.")
                 repo = pygit2.Repository(str(project_dir / '.git'))
             # Checkout the tag
             repo.checkout(
-                repo.lookup_reference(self.__TAG_REFNAME)
+                repo.lookup_reference(DataExtractor.TAG_REFNAME)
             )
             os.chdir(str(project_dir))
 
