@@ -1,7 +1,10 @@
 import random
 import time
 from pathlib import Path
-from typing import List, Text, Tuple
+from typing import List, Text, Tuple, Dict
+
+import os
+from xml.etree.ElementTree import parse
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -9,10 +12,19 @@ from sqlalchemy.orm import Session
 import pygit2
 import logging
 
+from subprocess import call, DEVNULL
+
 from models import *
 
 
 class DataExtractor:
+    TEST_REPORT_PATH = 'test.xml'
+    COVERAGE_REPORT_PATH = 'cov.xml'
+
+    SETUP_COMMAND = 'python setup.py install'
+    TEST_COMMAND = 'python -m pytest -q --junit-xml=' + TEST_REPORT_PATH
+    COVERAGE_COMMAND = 'python -m pytest -q {} --cov --cov-report=xml:' + COVERAGE_REPORT_PATH
+
     def __init__(self, db_path: Path):
         # Logger setup
         self.__logger = logging.getLogger('DataExtractor')
@@ -43,7 +55,7 @@ class DataExtractor:
         projects = self.__session.query(Project).all()
         self.__logger.info("Total " + str(len(projects)) + " projects are read.")
         for project in projects:
-            project_dir = clone_root / project.id.replace('/', '_')
+            project_dir = (clone_root / project.id.replace('/', '_')).resolve()
             # 2. Clone the repository
             try:
                 self.__logger.info("Cloning " + project.id + " into '" + str(project_dir) + "'...")
@@ -57,9 +69,80 @@ class DataExtractor:
             repo.checkout(
                 repo.lookup_reference(self.__TAG_REFNAME)
             )
+            os.chdir(str(project_dir))
+
             # TODO: 3. Run TC and add it to Test Table
+            # TODO: only being tested with ambv_black project
+            # TODO: redirect stderr to logger?
+            setup_result = call(DataExtractor.SETUP_COMMAND.split(), stdout=DEVNULL)
+            if setup_result != 0:
+                continue
+
+            test_result = call(DataExtractor.TEST_COMMAND.split(), stdout=DEVNULL)
+            if test_result != 0:
+                continue
+
+            tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
+
             # TODO: 4. Run coverage and add it to Coverage Table
-            # TODO: 5. Repeat for previous commit
+            for tc in tcs:
+                coverage_result = call(
+                    DataExtractor.COVERAGE_COMMAND.format(tc).split(),
+                    stdout=DEVNULL
+                )
+
+                if coverage_result != 0:
+                    continue
+
+                coverages = self._collect_coverages(project_dir / DataExtractor.COVERAGE_REPORT_PATH)
+                print(coverages)
+
+                break
+
+            # TODO: 5. Run git blame and add it to File Table
+
+            # TODO: 6. Repeat for previous commit
+
+    def _collect_tcs(self, xml_root: Path) -> Dict[Text, Tuple[int, float, bool]]:
+        tcs = {}
+
+        root_node = parse(xml_root).getroot()
+        tc_nodes = root_node.findall('testcase')
+
+        for tc_node in tc_nodes:
+            class_name = tc_node.get('classname').rsplit('.')[-1]
+            file_name = tc_node.get('file')
+            tc_name = tc_node.get('name')
+            tc_id = '{}::{}::{}'.format(file_name, class_name, tc_name)
+
+            tc_loc = int(tc_node.get('line'))
+            tc_time = float(tc_node.get('time'))
+
+            tc_failed = bool(list(tc_node.getiterator('failure')))
+            tc_error = bool(list(tc_node.getiterator('error')))  # error within TC
+            tc_skipped = bool(list(tc_node.getiterator('skipped')))
+
+            # currently, skipped tc is regarded as passed TC
+            tc_passed = not (tc_failed or tc_error)
+
+            tcs[tc_id] = (tc_loc, tc_time, tc_passed)
+
+        return tcs
+
+    def _collect_coverages(self, xml_root: Path) -> Dict[Text, List[int]]:
+        coverages = {}
+
+        root_node = parse(xml_root).getroot()
+        file_nodes = root_node.findall('packages/package/classes/class')
+
+        for file_node in file_nodes:
+            line_nodes = file_node.findall('lines/line')
+            hit_line_nodes = filter(lambda x: x.get('hits') == '1', line_nodes)
+            hit_lines = list(map(lambda x: int(x.get('number')), hit_line_nodes))
+
+            coverages[file_node.get('filename')] = hit_lines
+
+        return coverages
 
 
 def prepare_session(path: Path) -> Session:

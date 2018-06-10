@@ -1,6 +1,6 @@
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, PickleType, Boolean, ForeignKey
-
+from sqlalchemy import Column, Integer, String, DateTime, PickleType, Boolean, \
+    ForeignKey, Float
 
 Base = declarative_base()
 
@@ -36,10 +36,10 @@ class Test(Base):
 
     project_id = Column(String, ForeignKey(Project.id), primary_key=True)
     commit_hash = Column(String, ForeignKey(Commit.hash), primary_key=True)
-    path = Column(String, primary_key=True)
+    id = Column(String, primary_key=True)
 
     is_passed = Column(Boolean)
-    run_time = Column(Integer)
+    run_time = Column(Float)
     loc = Column(Integer)
 
 class Coverage(Base):
@@ -47,8 +47,7 @@ class Coverage(Base):
 
     project_id = Column(String, ForeignKey(Project.id), primary_key=True)
     commit_hash = Column(String, ForeignKey(Commit.hash), primary_key=True)
-    tc_path = Column(String, ForeignKey(Test.path), primary_key=True)
+    tc_id = Column(String, ForeignKey(Test.id), primary_key=True)
     file_path = Column(String, ForeignKey(File.path), primary_key=True)
 
     lines_covered = Column(PickleType)
-    run_time = Column(Integer)
