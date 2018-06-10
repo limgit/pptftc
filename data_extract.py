@@ -21,7 +21,7 @@ class DataExtractor:
     TEST_REPORT_PATH = 'test.xml'
     COVERAGE_REPORT_PATH = 'cov.xml'
 
-    SETUP_COMMAND = 'python setup.py install'
+    SETUP_COMMAND = 'python setup.py develop'
     TEST_COMMAND = 'python -m pytest -q --junit-xml=' + TEST_REPORT_PATH
     COVERAGE_COMMAND = 'python -m pytest -q {} --cov --cov-report=xml:' + COVERAGE_REPORT_PATH
 
