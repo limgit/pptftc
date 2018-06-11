@@ -70,9 +70,10 @@ class DataExtractor:
             )
             os.chdir(str(project_dir))
 
-            # TODO: 3. Run TC and add it to Test Table
             # TODO: only being tested with ambv_black project
             # TODO: redirect stderr to logger?
+            # 3. Run TCs
+            self.__logger.info("Running test cases for " + project.id + ":" + str(repo.head.target))
             setup_result = call(DataExtractor.SETUP_COMMAND.split(), stdout=DEVNULL)
             if setup_result != 0:
                 continue
@@ -83,8 +84,23 @@ class DataExtractor:
 
             tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
 
-            # TODO: 4. Run coverage and add it to Coverage Table
+            # 4. Add TCs to the Test table & Run coverage to add it to the Coverage Table
+            self.__logger.info("Running coverage for each test cases in " + project.id + ":" + str(repo.head.target))
+            l = len(tcs)
+            count = 0
             for tc in tcs:
+                # Add TC to the Test table
+                test = Test(
+                    project_id=project.id,
+                    commit_hash=str(repo.head.target),
+                    id=tc,
+                    is_passed=tcs[tc][2],
+                    run_time=tcs[tc][1],
+                    loc=tcs[tc][0]
+                )
+                self.__session.merge(test)
+
+                # Run coverage
                 coverage_result = call(
                     DataExtractor.COVERAGE_COMMAND.format(tc).split(),
                     stdout=DEVNULL
@@ -94,11 +110,26 @@ class DataExtractor:
                     continue
 
                 coverages = self._collect_coverages(project_dir / DataExtractor.COVERAGE_REPORT_PATH)
-                print(coverages)
 
-                break
+                for file in coverages:
+                    # Add coverage to the Coverage table
+                    cov = Coverage(
+                        project_id=project.id,
+                        commit_hash=str(repo.head.target),
+                        tc_id=tc,
+                        file_path=file,  # TODO: Is this correct?
+                        lines_covered=coverages[file]
+                    )
+                    self.__session.merge(cov)
 
-            # TODO: 5. Run git blame and add it to File Table
+                    # TODO: 5. Run git blame and add it to File Table
+
+                # Apply these changes to DB
+                self.__session.commit()
+                # Log progress whenever tenth digit changes
+                count += 1
+                if int(count * 100 / l) // 10 - int((count-1) * 100 / l) // 10 != 0:
+                    self.__logger.info("Progress: {}% ({}/{})...".format(int(count * 100 / l), count, l))
 
             # TODO: 6. Repeat for previous commit
 
