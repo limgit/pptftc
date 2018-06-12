@@ -66,14 +66,32 @@ class DataExtractor:
                 repo = pygit2.Repository(str(project_dir / '.git'))
             # Checkout the tag
             repo.checkout(
-                repo.lookup_reference(DataExtractor.TAG_REFNAME)
+                repo.lookup_reference(DataExtractor.TAG_REFNAME).resolve()
             )
             os.chdir(str(project_dir))
+
+            commit_count = 0
+            # Add commit to the Commit table
+            head_commit = repo.head.peel()
+            parent_commits = head_commit.parents
+            if len(parent_commits) != 1:
+                # Only care about the case when the commit has only one parent
+                continue
+            commit_count += 1
+            commit = Commit(
+                project_id=project.id,
+                hash=str(head_commit.id),
+                parent=str(parent_commits[0].id),
+                timestamp=head_commit.commit_time,
+                count=commit_count
+            )
+            self.__session.merge(commit)
+            self.__session.commit()
 
             # TODO: only being tested with ambv_black project
             # TODO: redirect stderr to logger?
             # 3. Run TCs
-            self.__logger.info("Running test cases for " + project.id + ":" + str(repo.head.target))
+            self.__logger.info("Running test cases for " + project.id + ":" + str(head_commit.id))
             setup_result = call(DataExtractor.SETUP_COMMAND.split(), stdout=DEVNULL)
             if setup_result != 0:
                 continue
@@ -85,14 +103,14 @@ class DataExtractor:
             tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
 
             # 4. Add TCs to the Test table & Run coverage to add it to the Coverage Table
-            self.__logger.info("Running coverage for each test cases in " + project.id + ":" + str(repo.head.target))
+            self.__logger.info("Running coverage for each test cases in " + project.id + ":" + str(head_commit.id))
             l = len(tcs)
             count = 0
             for tc in tcs:
                 # Add TC to the Test table
                 test = Test(
                     project_id=project.id,
-                    commit_hash=str(repo.head.target),
+                    commit_hash=str(head_commit.id),
                     id=tc,
                     is_passed=tcs[tc][2],
                     run_time=tcs[tc][1],
@@ -115,7 +133,7 @@ class DataExtractor:
                     # Add coverage to the Coverage table
                     cov = Coverage(
                         project_id=project.id,
-                        commit_hash=str(repo.head.target),
+                        commit_hash=str(head_commit.id),
                         tc_id=tc,
                         file_path=file,  # TODO: Is this correct?
                         lines_covered=coverages[file]
