@@ -17,6 +17,7 @@ class Commit(Base):
 
     project_id = Column(String, ForeignKey(Project.id), primary_key=True)
     hash = Column(String, primary_key=True)
+    parent = Column(String)
     timestamp = Column(DateTime)
     added_loc = Column(Integer)
     deleted_loc = Column(Integer)
