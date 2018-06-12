@@ -26,6 +26,8 @@ class DataExtractor:
     COVERAGE_COMMAND = 'python -m pytest -q {} --cov --cov-report=xml:' + COVERAGE_REPORT_PATH
 
     TAG_REFNAME = "refs/tags/pptftc"
+    WORKING_TAG_REFNAME = "refs/tags/pptftc_working"
+    COMMIT_COUNT_LIMIT = 10
 
     def __init__(self, db_path: Path):
         # Logger setup
@@ -71,85 +73,108 @@ class DataExtractor:
             os.chdir(str(project_dir))
 
             commit_count = 0
-            # Add commit to the Commit table
-            head_commit = repo.head.peel()
-            parent_commits = head_commit.parents
-            if len(parent_commits) != 1:
-                # Only care about the case when the commit has only one parent
-                continue
-            commit_count += 1
-            commit = Commit(
-                project_id=project.id,
-                hash=str(head_commit.id),
-                parent=str(parent_commits[0].id),
-                timestamp=head_commit.commit_time,
-                count=commit_count
-            )
-            self.__session.merge(commit)
-            self.__session.commit()
-
-            # TODO: only being tested with ambv_black project
-            # TODO: redirect stderr to logger?
-            # 3. Run TCs
-            self.__logger.info("Running test cases for " + project.id + ":" + str(head_commit.id))
-            setup_result = call(DataExtractor.SETUP_COMMAND.split(), stdout=DEVNULL)
-            if setup_result != 0:
-                continue
-
-            test_result = call(DataExtractor.TEST_COMMAND.split(), stdout=DEVNULL)
-            if test_result != 0:
-                continue
-
-            tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
-
-            # 4. Add TCs to the Test table & Run coverage to add it to the Coverage Table
-            self.__logger.info("Running coverage for each test cases in " + project.id + ":" + str(head_commit.id))
-            l = len(tcs)
-            count = 0
-            for tc in tcs:
-                # Add TC to the Test table
-                test = Test(
-                    project_id=project.id,
-                    commit_hash=str(head_commit.id),
-                    id=tc,
-                    is_passed=tcs[tc][2],
-                    run_time=tcs[tc][1],
-                    loc=tcs[tc][0]
-                )
-                self.__session.merge(test)
-
-                # Run coverage
-                coverage_result = call(
-                    DataExtractor.COVERAGE_COMMAND.format(tc).split(),
-                    stdout=DEVNULL
-                )
-
-                if coverage_result != 0:
+            # Repeat until the specified limit is reached
+            while commit_count < DataExtractor.COMMIT_COUNT_LIMIT:
+                # Only target the commits that has one parent
+                head_commit = repo.head.peel()
+                parent_commits = head_commit.parents
+                if len(parent_commits) == 0:
+                    # If no parent, it is initial commit. Abort
+                    self.__logger.info(
+                        project.id + ":" + str(head_commit.id) + " is initial commit. End process"
+                    )
+                    break
+                elif len(parent_commits) != 1:
+                    # If multiple parent, checkout the first parent until it has one parent
+                    self.__logger.info(
+                        project.id + ":" + str(head_commit.id) + " has multiple parents. Move on to first parent"
+                    )
+                    self._checkout_commit(repo, parent_commits[0])
                     continue
 
-                coverages = self._collect_coverages(project_dir / DataExtractor.COVERAGE_REPORT_PATH)
+                commit_count += 1
+                self.__logger.info(str(commit_count) + " - Do work for " + project.id + ":" + str(head_commit.id))
+                parent_commit = parent_commits[0]
+                # Add commit to the Commit table
+                commit = Commit(
+                    project_id=project.id,
+                    hash=str(head_commit.id),
+                    parent=str(parent_commit.id),
+                    timestamp=head_commit.commit_time,
+                    count=commit_count
+                )
+                self.__session.merge(commit)
+                self.__session.commit()
 
-                for file in coverages:
-                    # Add coverage to the Coverage table
-                    cov = Coverage(
+                # TODO: only being tested with ambv_black project
+                # TODO: redirect stderr to logger?
+                # 3. Run TCs
+                self.__logger.info("Running test cases for " + project.id + ":" + str(head_commit.id))
+                setup_result = call(DataExtractor.SETUP_COMMAND.split(), stdout=DEVNULL)
+                if setup_result != 0:
+                    continue
+
+                test_result = call(DataExtractor.TEST_COMMAND.split(), stdout=DEVNULL)
+                if test_result != 0:
+                    continue
+
+                tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
+
+                # 4. Add TCs to the Test table & Run coverage to add it to the Coverage Table
+                self.__logger.info("Running coverage for each test cases in " + project.id + ":" + str(head_commit.id))
+                total_tcs = len(tcs)
+                tc_count = 0
+                for tc in tcs:
+                    # Add TC to the Test table
+                    test = Test(
                         project_id=project.id,
                         commit_hash=str(head_commit.id),
-                        tc_id=tc,
-                        file_path=file,  # TODO: Is this correct?
-                        lines_covered=coverages[file]
+                        id=tc,
+                        is_passed=tcs[tc][2],
+                        run_time=tcs[tc][1],
+                        loc=tcs[tc][0]
                     )
-                    self.__session.merge(cov)
+                    self.__session.merge(test)
 
-                    # TODO: 5. Run git blame and add it to File Table
+                    # Run coverage
+                    coverage_result = call(
+                        DataExtractor.COVERAGE_COMMAND.format(tc).split(),
+                        stdout=DEVNULL
+                    )
 
-                # Apply these changes to DB
-                self.__session.commit()
-                # Log progress whenever tenth digit changes
-                count += 1
-                if int(count * 100 / l) // 10 - int((count-1) * 100 / l) // 10 != 0:
-                    self.__logger.info("Progress: {}% ({}/{})...".format(int(count * 100 / l), count, l))
+                    if coverage_result != 0:
+                        continue
 
-            # TODO: 6. Repeat for previous commit
+                    coverages = self._collect_coverages(project_dir / DataExtractor.COVERAGE_REPORT_PATH)
+
+                    for file in coverages:
+                        # Add coverage to the Coverage table
+                        cov = Coverage(
+                            project_id=project.id,
+                            commit_hash=str(head_commit.id),
+                            tc_id=tc,
+                            file_path=file,  # TODO: Is this correct?
+                            lines_covered=coverages[file]
+                        )
+                        self.__session.merge(cov)
+
+                        # TODO: 5. Run git blame and add it to File Table
+
+                    # Apply these changes to DB
+                    self.__session.commit()
+                    # Log progress whenever tenth digit changes
+                    tc_count += 1
+                    if int(tc_count * 100 / total_tcs) // 10 - int((tc_count-1) * 100 / total_tcs) // 10 != 0:
+                        self.__logger.info(
+                            "Progress: {}% ({}/{})...".format(int(tc_count * 100 / total_tcs), tc_count, total_tcs)
+                        )
+                # Repeat for the parent commit
+                self._checkout_commit(repo, parent_commit)
+
+    def _checkout_commit(self, repo: pygit2.Repository, commit):
+        repo.references.create(DataExtractor.WORKING_TAG_REFNAME, commit.id)
+        repo.checkout(DataExtractor.WORKING_TAG_REFNAME)
+        repo.references.delete(DataExtractor.WORKING_TAG_REFNAME)
 
     def _collect_tcs(self, xml_root: Path) -> Dict[Text, Tuple[int, float, bool]]:
         tcs = {}
