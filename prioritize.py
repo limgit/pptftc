@@ -1,6 +1,7 @@
 import random
 from collections import Counter
 from enum import Enum, auto
+from functools import partial
 from typing import List, Dict
 
 from sqlalchemy.orm import Session
@@ -9,8 +10,10 @@ from models import *
 
 class PrioritizeMethod(Enum):
     BaseRandom = auto()
-    BaseLOC = auto()
-    BaseCoverage = auto()
+    BaseLOCInc = auto()
+    BaseLOCDesc = auto()
+    BaseCoverageInc = auto()
+    BaseCoverageDesc = auto()
     LatestCommitRatio = auto()
     LatestCommitCount = auto()
     CommitSinceAverage = auto()
@@ -36,8 +39,10 @@ class Prioritizer:
         if Prioritizer.METHOD_MAPPING is None:
             Prioritizer.METHOD_MAPPING = {
                 PrioritizeMethod.BaseRandom: Prioritizer.by_random,
-                PrioritizeMethod.BaseLOC: Prioritizer.by_loc,
-                PrioritizeMethod.BaseCoverage: Prioritizer.by_coverage,
+                PrioritizeMethod.BaseLOCInc: partial(Prioritizer.by_loc, desc=False),
+                PrioritizeMethod.BaseLOCDesc: partial(Prioritizer.by_loc, desc=True),
+                PrioritizeMethod.BaseCoverageInc: partial(Prioritizer.by_coverage, desc=False),
+                PrioritizeMethod.BaseCoverageDesc: partial(Prioritizer.by_coverage, desc=True),
                 PrioritizeMethod.LatestCommitRatio: Prioritizer.by_latest_commit_count,
                 PrioritizeMethod.LatestCommitCount: Prioritizer.by_latest_commit_ratio,
             }
@@ -110,22 +115,24 @@ class Prioritizer:
             key=lambda x: x.run_time
         )
 
-    def by_loc(self) -> List[Test]:
+    def by_loc(self, desc=False) -> List[Test]:
+        multiplier = -1 if desc else 1
         return sorted(
             self._data_tests.values(),
-            key=lambda x: x.loc
+            key=lambda x: (x.loc * multiplier, x.run_time)
         )
 
-    def by_coverage(self) -> List[Test]:
+    def by_coverage(self, desc=False) -> List[Test]:
+        multiplier = -1 if desc else 1
         return sorted(
             self._data_tests.values(),
-            key=self._get_covered_loc
+            key=lambda x: (self._get_covered_loc(x) * multiplier, x.run_time)
         )
 
     def by_latest_commit_count(self) -> List[Test]:
         return sorted(
             self._data_tests.values(),
-            key=self._get_latest_commit_count
+            key=lambda x: (self._get_latest_commit_count(x), x.run_time)
         )
 
     def by_latest_commit_ratio(self) -> List[Test]:
