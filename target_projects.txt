@@ -1,10 +1,6 @@
 https://github.com/ambv/black
-https://github.com/ageitgey/face_recognition
-https://github.com/scikit-learn/scikit-learn
-https://github.com/imWildCat/scylla
 https://github.com/pallets/flask
-https://github.com/django/django
-https://github.com/pypa/pipenv
-https://github.com/edgedb/edgedb
-https://github.com/requests/requests
-https://github.com/scrapy/scrapy
+https://github.com/faif/python-patterns.git
+https://github.com/docker/compose.git
+https://github.com/keon/algorithms.git
+https://github.com/encode/django-rest-framework.git
