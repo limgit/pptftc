@@ -153,7 +153,7 @@ class DataExtractor:
                             project_id=project.id,
                             commit_hash=str(head_commit.id),
                             tc_id=tc,
-                            file_path=file,  # TODO: Is this correct?
+                            file_path=file,
                             lines_covered=coverages[file]
                         )
                         self.__session.merge(cov)
