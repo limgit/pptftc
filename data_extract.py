@@ -106,6 +106,27 @@ class DataExtractor:
                 self.__session.merge(commit)
                 self.__session.commit()
 
+                # Add diff to Diff table
+                diff = repo.diff(parent_commit, head_commit, context_lines=0)
+                hunk_tuples = []
+                for patch in diff:
+                    diff_delta = patch.delta
+                    if diff_delta.new_file.path != diff_delta.old_file.path\
+                            or not diff_delta.new_file.path.endswith('.py'):
+                        continue
+                    for hunk in patch.hunks:
+                        hunk_tuples.append(
+                            (hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines)
+                        )
+                diff_row = Diff(
+                    project_id=project.id,
+                    commit_hash=str(head_commit.id),
+                    path=diff_delta.new_file.path,
+                    hunks=hunk_tuples
+                )
+                self.__session.merge(diff_row)
+                self.__session.commit()
+
                 # TODO: only being tested with ambv_black project
                 # TODO: redirect stderr to logger?
                 # 3. Run TCs
