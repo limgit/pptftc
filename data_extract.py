@@ -180,6 +180,19 @@ class DataExtractor:
                         self.__session.merge(cov)
 
                         # TODO: 5. Run git blame and add it to File Table
+                        blame = repo.blame(file)
+                        touched_hash = []
+                        for blame_hunk in blame:
+                            for _ in range(blame_hunk.lines_in_hunk):
+                                touched_hash.append(str(blame_hunk.final_commit_id))
+
+                        file_row = File(
+                            project_id=project.id,
+                            commit_hash=str(head_commit.id),
+                            path=file,
+                            line_touched_hashes=touched_hash
+                        )
+                        self.__session.merge(file_row)
 
                     # Apply these changes to DB
                     self.__session.commit()
