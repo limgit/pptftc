@@ -25,10 +25,10 @@ class Prioritizer:
 
     def __init__(self, session: Session):
         self._session = session
-        self._target_project_id = None
-        self._target_commit_hash = None
 
-        self._data_project = None
+        self._target_project = None
+        self._target_commit = None
+
         self._data_commits = None
         self._data_files = None
         self._data_tests = None
@@ -49,18 +49,15 @@ class Prioritizer:
 
     @property
     def target_project(self):
-        return self._target_project_id
+        return self._target_project
 
     @target_project.setter
-    def target_project(self, value):
-        self._target_project_id = value
+    def target_project(self, value: Project):
+        self._target_project = value
 
-        self._data_project = self._session.query(Project).filter_by(id=value).one()
-
-        commits = self._session.query(Commit).filter_by(project_id=value).all()
+        commits = self._session.query(Commit).filter_by(project_id=value.id).all()
         self._data_commits = {commit.hash: commit for commit in commits}
 
-        self._target_commit_hash = None
         self._data_files = None
         self._data_tests = None
         self._data_coverages = None
@@ -68,21 +65,21 @@ class Prioritizer:
 
     @property
     def target_commit(self):
-        return self._target_commit_hash
+        return self._target_commit
 
     @target_commit.setter
-    def target_commit(self, value):
-        self._target_commit_hash = value
+    def target_commit(self, value: Commit) -> bool:
+        self._target_commit = value
 
         files = self._session.query(File).filter_by(
-            project_id=self._target_project_id,
-            commit_hash=self._target_commit_hash
+            project_id=self._target_project.id,
+            commit_hash=self._target_commit.hash
         )
         self._data_files = {file.path: file for file in files}
 
         tests = self._session.query(Test).filter_by(
-            project_id=self._target_project_id,
-            commit_hash=self._target_commit_hash
+            project_id=self._target_project.id,
+            commit_hash=self._target_commit.hash
         )
 
         self._data_tests = {test.path: test for test in tests}
@@ -91,8 +88,8 @@ class Prioritizer:
 
         for test_path in self._data_tests.keys():
             coverages = self._session.query(Coverage).filter_by(
-                project_id=self._target_project_id,
-                commit_hash=self._target_commit_hash,
+                project_id=self._target_project.id,
+                commit_hash=self._target_commit.hash,
                 tc_path=test_path
             ).all()
 
@@ -159,7 +156,7 @@ class Prioritizer:
         return covering_hashes
 
     def _get_latest_commit_count(self, test: Test) -> int:
-        return self._covering_hashes[test.path][self._target_commit_hash]
+        return self._covering_hashes[test.path][self._target_commit.hash]
 
     def _get_covered_loc(self, test: Test) -> int:
         return sum(
@@ -168,6 +165,6 @@ class Prioritizer:
         )
 
     def _get_commit_time_diff(self, commit: Commit) -> int:
-        latest_commit = self._data_commits[self._target_commit_hash]
+        latest_commit = self._data_commits[self._target_commit.hash]
 
         return latest_commit.timestamp - commit.timestamp
