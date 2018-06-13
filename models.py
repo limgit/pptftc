@@ -14,12 +14,14 @@ class Project(Base):
 
 class Commit(Base):
     __tablename__ = 'commit'
+    __table_args__ = {'sqlite_autoincrement': True}
 
-    project_id = Column(String, ForeignKey(Project.id), primary_key=True)
-    hash = Column(String, primary_key=True)
+    project_id = Column(String, ForeignKey(Project.id))
+    hash = Column(String)
     parent = Column(String)
     timestamp = Column(Integer)
-    count = Column(Integer)  # Recent commit has lower count value
+    count = Column(Integer, primary_key=True)  # Recent commit has lower count value
+
 
 class Diff(Base):
     __tablename__ = 'diff'
@@ -49,6 +51,7 @@ class Test(Base):
     is_passed = Column(Boolean)
     run_time = Column(Float)
     loc = Column(Integer)
+
 
 class Coverage(Base):
     __tablename__ = 'coverage'

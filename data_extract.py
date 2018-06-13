@@ -27,7 +27,7 @@ class DataExtractor:
 
     TAG_REFNAME = "refs/tags/pptftc"
     WORKING_TAG_REFNAME = "refs/tags/pptftc_working"
-    COMMIT_COUNT_LIMIT = 10
+    DATA_COUNT_LIMIT = 10
 
     def __init__(self, db_path: Path):
         # Logger setup
@@ -53,6 +53,7 @@ class DataExtractor:
         clone_root.mkdir(exist_ok=True)
 
         # Retrieve git project urls
+        previous_failed = True
         self.__logger.info("Reading projects list...")
         projects = self.__session.query(Project).all()
         self.__logger.info("Total " + str(len(projects)) + " projects are read.")
@@ -74,10 +75,10 @@ class DataExtractor:
             )
             os.chdir(str(project_dir))
 
-            commit_count = 0
+            data_count = 0
             # Repeat until the specified limit is reached
-            while commit_count < DataExtractor.COMMIT_COUNT_LIMIT:
-                # Only target the commits that has one parent
+            while data_count < DataExtractor.DATA_COUNT_LIMIT:
+                # Only target the commits that has one parent and does not exists in the DB
                 head_commit = repo.head.peel()
                 parent_commits = head_commit.parents
                 if len(parent_commits) == 0:
@@ -94,54 +95,82 @@ class DataExtractor:
                     self._checkout_commit(repo, parent_commits[0])
                     continue
 
-                commit_count += 1
-                self.__logger.info(str(commit_count) + " - Do work for " + project.id + ":" + str(head_commit.id))
                 parent_commit = parent_commits[0]
+                if self.__session.query(Commit).filter_by(hash=str(head_commit.id)).count() != 0:
+                    self.__logger.info("We have " + project.id + ":" + str(head_commit.id) + " in DB. Skipping...")
+                    self._checkout_commit(repo, parent_commit)
+                    continue
+
+                self.__logger.info("Do work for " + project.id + ":" + str(head_commit.id))
                 # Add commit to the Commit table
                 commit_row = Commit(
                     project_id=project.id,
                     hash=str(head_commit.id),
                     parent=str(parent_commit.id),
-                    timestamp=head_commit.commit_time,
-                    count=commit_count
+                    timestamp=head_commit.commit_time
                 )
                 self.__session.merge(commit_row)
-                self.__session.commit()
-
-                # Add diff to the Diff table
-                diff = repo.diff(parent_commit, head_commit, context_lines=0)
-                hunk_tuples = []
-                for patch in diff:
-                    diff_delta = patch.delta
-                    if diff_delta.new_file.path != diff_delta.old_file.path\
-                            or not diff_delta.new_file.path.endswith('.py'):
-                        continue
-                    for hunk in patch.hunks:
-                        hunk_tuples.append(
-                            (hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines)
-                        )
-                    diff_row = Diff(
-                        project_id=project.id,
-                        commit_hash=str(head_commit.id),
-                        path=diff_delta.new_file.path,
-                        hunks=hunk_tuples
-                    )
-                    self.__session.merge(diff_row)
                 self.__session.commit()
 
                 # TODO: only being tested with ambv_black project
                 # TODO: redirect stderr to logger?
                 # Run TCs
                 self.__logger.info("Running test cases for " + project.id + ":" + str(head_commit.id))
-                setup_result = call(DataExtractor.SETUP_COMMAND.split(), stdout=DEVNULL)
-                if setup_result != 0:
-                    continue
+                setup_py_file = project_dir / 'setup.py'
+                if setup_py_file.exists():
+                    self.__logger.info(" Run setup.py")
+                    setup_result = call(DataExtractor.SETUP_COMMAND.split(), stdout=DEVNULL)
+                    if setup_result != 0:
+                        self.__logger.info(" setup.py failed. End the loop")
+                        continue
+                    self.__logger.info(" Done setup.py")
 
-                test_result = call(DataExtractor.TEST_COMMAND.split(), stdout=DEVNULL)
-                if test_result != 0:
+                self.__logger.info(" Run TCs")
+                test_report_file = project_dir / DataExtractor.TEST_REPORT_PATH
+                if test_report_file.exists():
+                    os.remove(test_report_file)
+                call(DataExtractor.TEST_COMMAND.split(), stdout=DEVNULL)
+                if not test_report_file.exists():
+                    previous_failed = False
+                    self.__logger.info(" No report. End the loop")
                     continue
+                self.__logger.info(" Done TCs")
 
                 tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
+
+                current_failed = any(not tup[2] for tup in tcs.values())
+                if current_failed:
+                    # Add diff to the Diff table
+                    diff = repo.diff(parent_commit, head_commit, context_lines=0)
+                    hunk_tuples = []
+                    for patch in diff:
+                        diff_delta = patch.delta
+                        if diff_delta.new_file.path != diff_delta.old_file.path \
+                                or not diff_delta.new_file.path.endswith('.py'):
+                            continue
+                        for hunk in patch.hunks:
+                            hunk_tuples.append(
+                                (hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines)
+                            )
+                        diff_row = Diff(
+                            project_id=project.id,
+                            commit_hash=str(head_commit.id),
+                            path=diff_delta.new_file.path,
+                            hunks=hunk_tuples
+                        )
+                        self.__session.merge(diff_row)
+                    self.__session.commit()
+                else:
+                    self.__logger.info("Current TCs do not fail. Skip retrieving diff")
+
+                if not previous_failed:
+                    self.__logger.info("Previous TCs did not fail. Skip the rest routines")
+                    previous_failed = current_failed
+                    continue
+                previous_failed = current_failed
+                data_count += 1
+
+                self.__logger.info("{}/{} data retrieving...".format(data_count, DataExtractor.DATA_COUNT_LIMIT))
 
                 # Add TC to the Test table
                 for tc in tcs:
@@ -163,13 +192,10 @@ class DataExtractor:
                 tc_count = 0
                 for tc in tcs:
                     # Run coverage
-                    coverage_result = call(
+                    call(
                         DataExtractor.COVERAGE_COMMAND.format(tc).split(),
                         stdout=DEVNULL
                     )
-
-                    if coverage_result != 0:
-                        continue
 
                     coverages = self._collect_coverages(project_dir / DataExtractor.COVERAGE_REPORT_PATH)
 
@@ -199,7 +225,7 @@ class DataExtractor:
                 )
                 for file in every_files:
                     blame = repo.blame(file)
-                    touched_hash = []
+                    touched_hash = [None]
                     for blame_hunk in blame:
                         for _ in range(blame_hunk.lines_in_hunk):
                             touched_hash.append(str(blame_hunk.final_commit_id))
