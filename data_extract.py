@@ -136,7 +136,11 @@ class DataExtractor:
                     continue
                 self.__logger.info(" Done TCs")
 
-                tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
+                try:
+                    tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
+                except Exception:
+                    self.__logger.info("Something wrong with TCs. Skip the rest routines")
+                    continue
 
                 current_failed = any(not tup[2] for tup in tcs.values())
                 if current_failed:
