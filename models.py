@@ -14,13 +14,12 @@ class Project(Base):
 
 class Commit(Base):
     __tablename__ = 'commit'
-    __table_args__ = {'sqlite_autoincrement': True}
 
-    project_id = Column(String, ForeignKey(Project.id))
+    project_id = Column(String, ForeignKey(Project.id), primary_key=True)
     hash = Column(String)
     parent = Column(String)
     timestamp = Column(Integer)
-    count = Column(Integer, primary_key=True)  # Recent commit has lower count value
+    id_num = Column(Integer, primary_key=True)  # Recent commit has lower count value
 
 
 class Diff(Base):

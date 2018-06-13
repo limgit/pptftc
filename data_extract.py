@@ -76,13 +76,15 @@ class DataExtractor:
             os.chdir(str(project_dir))
 
             data_count = 0
+            commit_count = 0
             # Repeat until the specified limit is reached
             while data_count < DataExtractor.DATA_COUNT_LIMIT:
-                # Repeat for parent commit
+                # Repeat for first parent commit
                 self._checkout_commit(repo, repo.head.peel().parents[0])
                 # Only target the commits that has one parent and does not exists in the DB
                 head_commit = repo.head.peel()
                 parent_commits = head_commit.parents
+                commit_count += 1
 
                 # If we have commit in DB already, skip it.
                 if self.__session.query(Commit).filter_by(hash=str(head_commit.id)).count() != 0:
@@ -94,7 +96,8 @@ class DataExtractor:
                     project_id=project.id,
                     hash=str(head_commit.id),
                     parent=str(parent_commits[0].id) if len(parent_commits) != 0 else '',
-                    timestamp=head_commit.commit_time
+                    timestamp=head_commit.commit_time,
+                    id_num=commit_count
                 )
                 self.__session.merge(commit_row)
                 self.__session.commit()
