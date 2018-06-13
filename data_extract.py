@@ -78,6 +78,8 @@ class DataExtractor:
             data_count = 0
             # Repeat until the specified limit is reached
             while data_count < DataExtractor.DATA_COUNT_LIMIT:
+                # Repeat for parent commit
+                self._checkout_commit(repo, repo.head.peel().parents[0])
                 # Only target the commits that has one parent and does not exists in the DB
                 head_commit = repo.head.peel()
                 parent_commits = head_commit.parents
@@ -92,13 +94,11 @@ class DataExtractor:
                     self.__logger.info(
                         project.id + ":" + str(head_commit.id) + " has multiple parents. Move on to first parent"
                     )
-                    self._checkout_commit(repo, parent_commits[0])
                     continue
 
                 parent_commit = parent_commits[0]
                 if self.__session.query(Commit).filter_by(hash=str(head_commit.id)).count() != 0:
                     self.__logger.info("We have " + project.id + ":" + str(head_commit.id) + " in DB. Skipping...")
-                    self._checkout_commit(repo, parent_commit)
                     continue
 
                 self.__logger.info("Do work for " + project.id + ":" + str(head_commit.id))
@@ -242,9 +242,6 @@ class DataExtractor:
                     )
                     self.__session.merge(file_row)
                 self.__session.commit()
-
-                # Repeat for the parent commit
-                self._checkout_commit(repo, parent_commit)
         os.chdir(str(cwd))
 
     def _checkout_commit(self, repo: pygit2.Repository, commit):
