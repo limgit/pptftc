@@ -1,10 +1,14 @@
+import bisect
 import random
 from collections import Counter
 from enum import Enum, auto
 from functools import partial
-from typing import List, Dict
+from pathlib import Path
+from typing import List, Dict, Any
 
 from sqlalchemy.orm import Session
+
+import data_extract
 from models import *
 
 
@@ -33,6 +37,7 @@ class Prioritizer:
         self._data_files = None
         self._data_tests = None
         self._data_coverages = None
+        self._data_diffs = None
 
         self._covering_hashes = None
 
@@ -61,6 +66,7 @@ class Prioritizer:
         self._data_files = None
         self._data_tests = None
         self._data_coverages = None
+        self._data_diffs = None
         self._covering_hashes = None
 
     @property
@@ -73,23 +79,30 @@ class Prioritizer:
 
         files = self._session.query(File).filter_by(
             project_id=self._target_project.id,
-            commit_hash=self._target_commit.hash
+            commit_hash=self._target_commit.parent
         )
         self._data_files = {file.path: file for file in files}
 
         tests = self._session.query(Test).filter_by(
             project_id=self._target_project.id,
-            commit_hash=self._target_commit.hash
+            commit_hash=self._target_commit.parent
         )
 
         self._data_tests = {test.path: test for test in tests}
+
+        diffs = self._session.query(Diff).filter_by(
+            project_id=self._target_project.id,
+            commit_hash=self._target_commit
+        )
+
+        self._data_diffs = {diff.path: diff for diff in diffs}
 
         self._data_coverages = {}
 
         for test_path in self._data_tests.keys():
             coverages = self._session.query(Coverage).filter_by(
                 project_id=self._target_project.id,
-                commit_hash=self._target_commit.hash,
+                commit_hash=self._target_commit.parent,
                 tc_path=test_path
             ).all()
 
@@ -147,8 +160,24 @@ class Prioritizer:
     def _get_covering_hashes(self, test_path: str) -> Counter:
         covering_hashes = Counter()
         for file_name, file in self._data_files.items():
+            diff_hulks = self._data_diffs[file_name].hulks
+
             coverage = self._data_coverages[test_path][file_name]
             covered_line = coverage.lines_covered
+            file_hashes = file.line_touched_hashes[:]
+            file_length = len(file.line_touched_hashes)
+
+            for hulk in diff_hulks:
+                old_start, old_lines, new_start, new_lines = hulk
+
+                if old_lines == 0 and new_lines > 0:  # added
+                    prev_covered = self._has_value(covered_line, new_start - 1) if new_start > 1 else True
+                    next_covered = self._has_value(covered_line, new_start) if new_start <= file_length else True
+
+                    if prev_covered and next_covered:
+                        covering_hashes.update([self._target_commit.hash] * new_lines)
+                else:  # deleted or modified
+                    file_hashes[old_start:old_lines] = self._target_commit.hash
 
             file_hashes = [covered_line[line] for line in file.line_touched_hashes]
             covering_hashes.update(file_hashes)
@@ -168,3 +197,6 @@ class Prioritizer:
         latest_commit = self._data_commits[self._target_commit.hash]
 
         return latest_commit.timestamp - commit.timestamp
+
+    def _has_value(self, list: List, value: Any):
+        return list[bisect.bisect_left(list, value)] == value
