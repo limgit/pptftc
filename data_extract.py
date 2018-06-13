@@ -86,6 +86,8 @@ class DataExtractor:
                 parent_commits = head_commit.parents
                 commit_count += 1
 
+                self.__logger.info("Loop for commit {} ({}) in {}".format(commit_count, head_commit.id, project.id))
+
                 # If we have commit in DB already, skip it.
                 if self.__session.query(Commit).filter_by(hash=str(head_commit.id)).count() != 0:
                     self.__logger.info("We have {}:{} in DB. Skipping...".format(project.id, head_commit.id))
