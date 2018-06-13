@@ -215,9 +215,9 @@ class DataExtractor:
                 self._checkout_commit(repo, parent_commit)
 
     def _checkout_commit(self, repo: pygit2.Repository, commit):
-        repo.references.create(DataExtractor.WORKING_TAG_REFNAME, commit.id)
+        repo.create_reference(DataExtractor.WORKING_TAG_REFNAME, commit.id)
         repo.checkout(DataExtractor.WORKING_TAG_REFNAME)
-        repo.references.delete(DataExtractor.WORKING_TAG_REFNAME)
+        repo.lookup_reference(DataExtractor.WORKING_TAG_REFNAME).delete()
 
     def _collect_tcs(self, xml_root: Path) -> Dict[Text, Tuple[int, float, bool]]:
         tcs = {}
