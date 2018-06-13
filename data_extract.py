@@ -83,6 +83,22 @@ class DataExtractor:
                 # Only target the commits that has one parent and does not exists in the DB
                 head_commit = repo.head.peel()
                 parent_commits = head_commit.parents
+
+                # If we have commit in DB already, skip it.
+                if self.__session.query(Commit).filter_by(hash=str(head_commit.id)).count() != 0:
+                    self.__logger.info("We have " + project.id + ":" + str(head_commit.id) + " in DB. Skipping...")
+                    continue
+
+                # Add commit to the Commit table
+                commit_row = Commit(
+                    project_id=project.id,
+                    hash=str(head_commit.id),
+                    parent=str(parent_commits[0].id) if len(parent_commits) != 0 else '',
+                    timestamp=head_commit.commit_time
+                )
+                self.__session.merge(commit_row)
+                self.__session.commit()
+
                 if len(parent_commits) == 0:
                     # If no parent, it is initial commit. Abort
                     self.__logger.info(
@@ -97,20 +113,7 @@ class DataExtractor:
                     continue
 
                 parent_commit = parent_commits[0]
-                if self.__session.query(Commit).filter_by(hash=str(head_commit.id)).count() != 0:
-                    self.__logger.info("We have " + project.id + ":" + str(head_commit.id) + " in DB. Skipping...")
-                    continue
-
                 self.__logger.info("Do work for " + project.id + ":" + str(head_commit.id))
-                # Add commit to the Commit table
-                commit_row = Commit(
-                    project_id=project.id,
-                    hash=str(head_commit.id),
-                    parent=str(parent_commit.id),
-                    timestamp=head_commit.commit_time
-                )
-                self.__session.merge(commit_row)
-                self.__session.commit()
 
                 # TODO: only being tested with ambv_black project
                 # TODO: redirect stderr to logger?
