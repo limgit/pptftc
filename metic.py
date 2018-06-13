@@ -9,6 +9,9 @@ class CalculateMetric:
         total_fail = sum(not test.is_passed for test in tests)
         total_run_time = sum(test.run_time for test in tests)
 
+        if total_fail == 0 or total_run_time == 0:
+            return 100
+
         for test in tests:
             if test.is_passed is True:
                 #area = num_fail * test.run_time
