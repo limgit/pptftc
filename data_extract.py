@@ -51,13 +51,13 @@ class DataExtractor:
         clone_root = Path('cloned_projects')
         clone_root.mkdir(exist_ok=True)
 
-        # 1. Retrieve git project urls
+        # Retrieve git project urls
         self.__logger.info("Reading projects list...")
         projects = self.__session.query(Project).all()
         self.__logger.info("Total " + str(len(projects)) + " projects are read.")
         for project in projects:
             project_dir = (clone_root / project.id.replace('/', '_')).resolve()
-            # 2. Clone the repository
+            # Clone the repository
             try:
                 self.__logger.info("Cloning " + project.id + " into '" + str(project_dir) + "'...")
                 repo = pygit2.clone_repository(project.git_url, str(project_dir))
@@ -106,7 +106,7 @@ class DataExtractor:
                 self.__session.merge(commit_row)
                 self.__session.commit()
 
-                # Add diff to Diff table
+                # Add diff to the Diff table
                 diff = repo.diff(parent_commit, head_commit, context_lines=0)
                 hunk_tuples = []
                 for patch in diff:
@@ -118,18 +118,18 @@ class DataExtractor:
                         hunk_tuples.append(
                             (hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines)
                         )
-                diff_row = Diff(
-                    project_id=project.id,
-                    commit_hash=str(head_commit.id),
-                    path=diff_delta.new_file.path,
-                    hunks=hunk_tuples
-                )
-                self.__session.merge(diff_row)
+                    diff_row = Diff(
+                        project_id=project.id,
+                        commit_hash=str(head_commit.id),
+                        path=diff_delta.new_file.path,
+                        hunks=hunk_tuples
+                    )
+                    self.__session.merge(diff_row)
                 self.__session.commit()
 
                 # TODO: only being tested with ambv_black project
                 # TODO: redirect stderr to logger?
-                # 3. Run TCs
+                # Run TCs
                 self.__logger.info("Running test cases for " + project.id + ":" + str(head_commit.id))
                 setup_result = call(DataExtractor.SETUP_COMMAND.split(), stdout=DEVNULL)
                 if setup_result != 0:
@@ -141,12 +141,8 @@ class DataExtractor:
 
                 tcs = self._collect_tcs(project_dir / DataExtractor.TEST_REPORT_PATH)
 
-                # 4. Add TCs to the Test table & Run coverage to add it to the Coverage Table
-                self.__logger.info("Running coverage for each test cases in " + project.id + ":" + str(head_commit.id))
-                total_tcs = len(tcs)
-                tc_count = 0
+                # Add TC to the Test table
                 for tc in tcs:
-                    # Add TC to the Test table
                     test_row = Test(
                         project_id=project.id,
                         commit_hash=str(head_commit.id),
@@ -156,7 +152,14 @@ class DataExtractor:
                         loc=tcs[tc][0]
                     )
                     self.__session.merge(test_row)
+                self.__session.commit()
 
+                # Run coverage to add it to the Coverage Table
+                self.__logger.info("Running coverage for each test cases in " + project.id + ":" + str(head_commit.id))
+                every_files = set()
+                total_tcs = len(tcs)
+                tc_count = 0
+                for tc in tcs:
                     # Run coverage
                     coverage_result = call(
                         DataExtractor.COVERAGE_COMMAND.format(tc).split(),
@@ -168,6 +171,8 @@ class DataExtractor:
 
                     coverages = self._collect_coverages(project_dir / DataExtractor.COVERAGE_REPORT_PATH)
 
+                    every_files.update(coverages)
+
                     for file in coverages:
                         # Add coverage to the Coverage table
                         coverage_row = Coverage(
@@ -178,30 +183,34 @@ class DataExtractor:
                             lines_covered=coverages[file]
                         )
                         self.__session.merge(coverage_row)
-
-                        # 5. Run git blame and add it to File Table
-                        blame = repo.blame(file)
-                        touched_hash = []
-                        for blame_hunk in blame:
-                            for _ in range(blame_hunk.lines_in_hunk):
-                                touched_hash.append(str(blame_hunk.final_commit_id))
-
-                        file_row = File(
-                            project_id=project.id,
-                            commit_hash=str(head_commit.id),
-                            path=file,
-                            line_touched_hashes=touched_hash
-                        )
-                        self.__session.merge(file_row)
-
-                    # Apply these changes to DB
-                    self.__session.commit()
                     # Log progress whenever tenth digit changes
                     tc_count += 1
                     if int(tc_count * 100 / total_tcs) // 10 - int((tc_count-1) * 100 / total_tcs) // 10 != 0:
                         self.__logger.info(
                             "Progress: {}% ({}/{})...".format(int(tc_count * 100 / total_tcs), tc_count, total_tcs)
                         )
+                self.__session.commit()
+
+                # Run git blame and add it to the File table
+                self.__logger.info(
+                    "Blame for " + str(len(every_files)) + " files in " + project.id + ":" + str(head_commit.id)
+                )
+                for file in every_files:
+                    blame = repo.blame(file)
+                    touched_hash = []
+                    for blame_hunk in blame:
+                        for _ in range(blame_hunk.lines_in_hunk):
+                            touched_hash.append(str(blame_hunk.final_commit_id))
+
+                    file_row = File(
+                        project_id=project.id,
+                        commit_hash=str(head_commit.id),
+                        path=file,
+                        line_touched_hashes=touched_hash
+                    )
+                    self.__session.merge(file_row)
+                self.__session.commit()
+
                 # Repeat for the parent commit
                 self._checkout_commit(repo, parent_commit)
 
