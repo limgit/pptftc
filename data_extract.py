@@ -204,7 +204,11 @@ class DataExtractor:
                         stdout=DEVNULL
                     )
 
-                    coverages = self._collect_coverages(project_dir / DataExtractor.COVERAGE_REPORT_PATH)
+                    try:
+                        coverages = self._collect_coverages(project_dir / DataExtractor.COVERAGE_REPORT_PATH)
+                    except Exception:
+                        self.__logger.info("Something wrong with TCs. Skip the rest routines")
+                        continue
 
                     every_files.update(coverages)
 
