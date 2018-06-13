@@ -48,7 +48,8 @@ class DataExtractor:
         self.__session = Session(engine)
 
     def run(self):
-        clone_root = Path('cloned_projects')
+        cwd = Path('.').resolve()
+        clone_root = cwd / 'cloned_projects'
         clone_root.mkdir(exist_ok=True)
 
         # Retrieve git project urls
@@ -56,7 +57,8 @@ class DataExtractor:
         projects = self.__session.query(Project).all()
         self.__logger.info("Total " + str(len(projects)) + " projects are read.")
         for project in projects:
-            project_dir = (clone_root / project.id.replace('/', '_')).resolve()
+            os.chdir(str(cwd))
+            project_dir = clone_root / project.id.replace('/', '_')
             # Clone the repository
             try:
                 self.__logger.info("Cloning " + project.id + " into '" + str(project_dir) + "'...")
@@ -213,6 +215,7 @@ class DataExtractor:
 
                 # Repeat for the parent commit
                 self._checkout_commit(repo, parent_commit)
+        os.chdir(str(cwd))
 
     def _checkout_commit(self, repo: pygit2.Repository, commit):
         repo.create_reference(DataExtractor.WORKING_TAG_REFNAME, commit.id)
