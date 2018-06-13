@@ -56,18 +56,18 @@ class DataExtractor:
         previous_failed = True
         self.__logger.info("Reading projects list...")
         projects = self.__session.query(Project).all()
-        self.__logger.info("Total " + str(len(projects)) + " projects are read.")
+        self.__logger.info("Total {} projects are read".format(len(projects)))
         for project in projects:
             os.chdir(str(cwd))
             project_dir = clone_root / project.id.replace('/', '_')
             # Clone the repository
             try:
-                self.__logger.info("Cloning " + project.id + " into '" + str(project_dir) + "'...")
+                self.__logger.info("Cloning {} into '{}'...".format(project.id, project_dir))
                 repo = pygit2.clone_repository(project.git_url, str(project_dir))
                 # Create an tag for current HEAD
                 repo.create_reference(DataExtractor.TAG_REFNAME, repo.head.target)
             except ValueError:
-                self.__logger.info("'" + str(project_dir) + "' exists. Skip cloning.")
+                self.__logger.info("'{}' exists. Skip cloning".format(project_dir))
                 repo = pygit2.Repository(str(project_dir / '.git'))
             # Checkout the tag
             repo.checkout(
@@ -88,7 +88,7 @@ class DataExtractor:
 
                 # If we have commit in DB already, skip it.
                 if self.__session.query(Commit).filter_by(hash=str(head_commit.id)).count() != 0:
-                    self.__logger.info("We have " + project.id + ":" + str(head_commit.id) + " in DB. Skipping...")
+                    self.__logger.info("We have {}:{} in DB. Skipping...".format(project.id, head_commit.id))
                     continue
 
                 # Add commit to the Commit table
@@ -105,23 +105,23 @@ class DataExtractor:
                 if len(parent_commits) == 0:
                     # If no parent, it is initial commit. Abort
                     self.__logger.info(
-                        project.id + ":" + str(head_commit.id) + " is initial commit. End process"
+                        "{}:{} is initial commit. End process".format(project.id, head_commit.id)
                     )
                     break
                 elif len(parent_commits) != 1:
                     # If multiple parent, checkout the first parent until it has one parent
                     self.__logger.info(
-                        project.id + ":" + str(head_commit.id) + " has multiple parents. Move on to first parent"
+                        "{}:{} has multiple parents. Move on to first parent".format(project.id, head_commit.id)
                     )
                     continue
 
                 parent_commit = parent_commits[0]
-                self.__logger.info("Do work for " + project.id + ":" + str(head_commit.id))
+                self.__logger.info("Do work for {}:{}".format(project.id, head_commit.id))
 
                 # TODO: only being tested with ambv_black project
                 # TODO: redirect stderr to logger?
                 # Run TCs
-                self.__logger.info("Running test cases for " + project.id + ":" + str(head_commit.id))
+                self.__logger.info("Running test cases for {}:{}".format(project.id, head_commit.id))
                 setup_py_file = project_dir / 'setup.py'
                 if setup_py_file.exists():
                     self.__logger.info(" Run setup.py")
@@ -196,7 +196,7 @@ class DataExtractor:
                 self.__session.commit()
 
                 # Run coverage to add it to the Coverage Table
-                self.__logger.info("Running coverage for each test cases in " + project.id + ":" + str(head_commit.id))
+                self.__logger.info("Running coverage for each test cases in {}:{}".format(project.id, head_commit.id))
                 every_files = set()
                 total_tcs = len(tcs)
                 tc_count = 0
@@ -235,7 +235,7 @@ class DataExtractor:
 
                 # Run git blame and add it to the File table
                 self.__logger.info(
-                    "Blame for " + str(len(every_files)) + " files in " + project.id + ":" + str(head_commit.id)
+                    "Blame for {} files in {}:{}".format(len(every_files), project.id, head_commit.id)
                 )
                 for file in every_files:
                     blame = repo.blame(file)
