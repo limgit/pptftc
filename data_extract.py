@@ -96,14 +96,14 @@ class DataExtractor:
                 self.__logger.info(str(commit_count) + " - Do work for " + project.id + ":" + str(head_commit.id))
                 parent_commit = parent_commits[0]
                 # Add commit to the Commit table
-                commit = Commit(
+                commit_row = Commit(
                     project_id=project.id,
                     hash=str(head_commit.id),
                     parent=str(parent_commit.id),
                     timestamp=head_commit.commit_time,
                     count=commit_count
                 )
-                self.__session.merge(commit)
+                self.__session.merge(commit_row)
                 self.__session.commit()
 
                 # Add diff to Diff table
@@ -147,7 +147,7 @@ class DataExtractor:
                 tc_count = 0
                 for tc in tcs:
                     # Add TC to the Test table
-                    test = Test(
+                    test_row = Test(
                         project_id=project.id,
                         commit_hash=str(head_commit.id),
                         id=tc,
@@ -155,7 +155,7 @@ class DataExtractor:
                         run_time=tcs[tc][1],
                         loc=tcs[tc][0]
                     )
-                    self.__session.merge(test)
+                    self.__session.merge(test_row)
 
                     # Run coverage
                     coverage_result = call(
@@ -170,16 +170,16 @@ class DataExtractor:
 
                     for file in coverages:
                         # Add coverage to the Coverage table
-                        cov = Coverage(
+                        coverage_row = Coverage(
                             project_id=project.id,
                             commit_hash=str(head_commit.id),
                             tc_id=tc,
                             file_path=file,
                             lines_covered=coverages[file]
                         )
-                        self.__session.merge(cov)
+                        self.__session.merge(coverage_row)
 
-                        # TODO: 5. Run git blame and add it to File Table
+                        # 5. Run git blame and add it to File Table
                         blame = repo.blame(file)
                         touched_hash = []
                         for blame_hunk in blame:
