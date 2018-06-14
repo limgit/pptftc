@@ -10,7 +10,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 import data_extract
-from metic import CalculateMetric
+from metric import CalculateMetric
 from models import *
 
 
@@ -258,7 +258,7 @@ class Prioritizer:
         counter = self._covering_hashes[test.id]
 
         commit_count_list = [
-            self._data_commits[hash].count
+            self._data_commits[hash].id_num
             for hash in counter
             if hash in self._data_commits
         ]
@@ -266,8 +266,8 @@ class Prioritizer:
         min_commit_count = min(commit_count_list) if commit_count_list else 0
 
         return sum(
-            (self._data_commits[hash].count - min_commit_count) * count
-            for hash, count in counter.items()
+            (self._data_commits[hash].id_num - min_commit_count) * id_num
+            for hash, id_num in counter.items()
             if hash in self._data_commits
         )
 
@@ -325,9 +325,10 @@ def main():
 
     print(len(results[PrioritizeMethod.CommitAheadSum]))
     for method, metrics in results.items():
-        print(method, sum(metrics) / len(metrics))
+        #print(method, sum(metrics) / len(metrics))
+        print(method, round(sum(metrics) / len(metrics), 2))
 
-    print(corr.corr())
+    print(round(corr.corr(), 2))
 
 
 if __name__ == '__main__':
