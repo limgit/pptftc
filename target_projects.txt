@@ -1,6 +1,5 @@
-https://github.com/ambv/black
-https://github.com/pallets/flask
 https://github.com/faif/python-patterns.git
-https://github.com/docker/compose.git
+https://github.com/ambv/black
 https://github.com/keon/algorithms.git
+https://github.com/docker/compose.git
 https://github.com/encode/django-rest-framework.git

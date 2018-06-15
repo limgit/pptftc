@@ -6,10 +6,11 @@ from functools import partial
 from pathlib import Path
 from typing import List, Dict, Any
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
 import data_extract
-from metic import CalculateMetric
+from metric import CalculateMetric
 from models import *
 
 
@@ -19,10 +20,12 @@ class PrioritizeMethod(Enum):
     BaseLOCDesc = auto()
     BaseCoverageInc = auto()
     BaseCoverageDesc = auto()
+    BaseRuntimeInc = auto()
+    BaseRuntimeDesc = auto()
     LatestCommitRatio = auto()
     LatestCommitCount = auto()
-    CommitSinceAverage = auto()
-    CommitSinceSum = auto()
+    CommitAheadAverage = auto()
+    CommitAheadSum = auto()
 
 
 class Prioritizer:
@@ -49,8 +52,12 @@ class Prioritizer:
                 PrioritizeMethod.BaseLOCDesc: partial(self.by_loc, desc=True),
                 PrioritizeMethod.BaseCoverageInc: partial(self.by_coverage, desc=False),
                 PrioritizeMethod.BaseCoverageDesc: partial(self.by_coverage, desc=True),
+                PrioritizeMethod.BaseRuntimeInc: partial(self.by_run_time, desc=False),
+                PrioritizeMethod.BaseRuntimeDesc: partial(self.by_run_time, desc=True),
                 PrioritizeMethod.LatestCommitRatio: self.by_latest_commit_count,
                 PrioritizeMethod.LatestCommitCount: self.by_latest_commit_ratio,
+                PrioritizeMethod.CommitAheadAverage: self.by_commit_ahead_average,
+                PrioritizeMethod.CommitAheadSum: self.by_commit_ahead_sum,
             }
 
     @property
@@ -127,12 +134,6 @@ class Prioritizer:
 
         return tests
 
-    def by_runtime(self) -> List[Test]:
-        return sorted(
-            self._data_tests.values(),
-            key=lambda x: x.run_time
-        )
-
     def by_loc(self, desc=False) -> List[Test]:
         multiplier = -1 if desc else 1
         return sorted(
@@ -147,16 +148,35 @@ class Prioritizer:
             key=lambda x: (self._get_covered_loc(x) * multiplier, x.run_time)
         )
 
+    def by_run_time(self, desc=False) -> List[Test]:
+        multiplier = -1 if desc else 1
+        return sorted(
+            self._data_tests.values(),
+            key=lambda x: x.run_time * multiplier
+        )
+
     def by_latest_commit_count(self) -> List[Test]:
         return sorted(
             self._data_tests.values(),
-            key=lambda x: (self._get_latest_commit_count(x), x.run_time)
+            key=lambda x: (-self._get_latest_commit_count(x), x.run_time)
         )
 
     def by_latest_commit_ratio(self) -> List[Test]:
         return sorted(
             self._data_tests.values(),
-            key=lambda x: self._get_latest_commit_count(x) / self._get_covered_loc(x)
+            key=lambda x: -(self._get_latest_commit_count(x) / self._get_covered_loc(x))
+        )
+
+    def by_commit_ahead_sum(self) -> List[Test]:
+        return sorted(
+            self._data_tests.values(),
+            key=lambda x: (self._get_ahead_count(x), x.run_time)
+        )
+
+    def by_commit_ahead_average(self) -> List[Test]:
+        return sorted(
+            self._data_tests.values(),
+            key=lambda x: self._get_ahead_count(x) / self._get_covered_loc(x),
         )
 
     def by_all(self) -> Dict[PrioritizeMethod, List[Test]]:
@@ -165,10 +185,49 @@ class Prioritizer:
             for method, func in Prioritizer.METHOD_MAPPING.items()
         }
 
+    def get_raw_values(self) -> Dict[PrioritizeMethod, List[Test]]:
+        results = {
+            PrioritizeMethod.BaseLOCDesc: [],
+            PrioritizeMethod.BaseCoverageInc: [],
+            PrioritizeMethod.BaseRuntimeInc: [],
+            PrioritizeMethod.LatestCommitCount: [],
+            PrioritizeMethod.LatestCommitRatio: [],
+            PrioritizeMethod.CommitAheadSum: [],
+            PrioritizeMethod.CommitAheadAverage: []
+        }
+
+        for test in self._data_tests.values():
+            results[PrioritizeMethod.BaseLOCDesc].append(
+                test.loc
+            )
+            results[PrioritizeMethod.BaseCoverageInc].append(
+                self._get_covered_loc(test)
+            )
+            results[PrioritizeMethod.BaseRuntimeInc].append(
+                test.run_time
+            )
+            results[PrioritizeMethod.LatestCommitCount].append(
+                self._get_latest_commit_count(test)
+            )
+            results[PrioritizeMethod.LatestCommitRatio].append(
+                self._get_latest_commit_count(test) / self._get_covered_loc(test)
+            )
+            results[PrioritizeMethod.CommitAheadSum].append(
+                self._get_ahead_count(test)
+            )
+            results[PrioritizeMethod.CommitAheadAverage].append(
+                self._get_ahead_count(test) / self._get_covered_loc(test)
+            )
+
+        return results
+
     def _get_covering_hashes(self, test_path: str) -> Counter:
         covering_hashes = Counter()
         for file_name, file in self._data_files.items():
             diff_hunks = self._data_diffs[file_name].hunks if file_name in self._data_diffs else []
+
+            if file_name not in self._data_coverages[test_path]:
+                continue
 
             coverage = self._data_coverages[test_path][file_name]
             covered_line = coverage.lines_covered
@@ -187,7 +246,7 @@ class Prioritizer:
                 else:  # deleted or modified
                     file_hashes[old_start:old_lines] = self._target_commit.hash
 
-            file_hashes = [file.line_touched_hashes[line] for line in covered_line]
+            file_hashes = [file.line_touched_hashes[line - 1] for line in covered_line]
             covering_hashes.update(file_hashes)
 
         return covering_hashes
@@ -195,11 +254,27 @@ class Prioritizer:
     def _get_latest_commit_count(self, test: Test) -> int:
         return self._covering_hashes[test.id][self._target_commit.hash]
 
-    def _get_covered_loc(self, test: Test) -> int:
+    def _get_ahead_count(self, test: Test) -> int:
+        counter = self._covering_hashes[test.id]
+
+        commit_count_list = [
+            self._data_commits[hash].id_num
+            for hash in counter
+            if hash in self._data_commits
+        ]
+
+        min_commit_count = min(commit_count_list) if commit_count_list else 0
+
         return sum(
-            len(coverage.lines_covered)
-            for coverage in self._data_coverages[test.id].values()
+            (self._data_commits[hash].id_num - min_commit_count) * id_num
+            for hash, id_num in counter.items()
+            if hash in self._data_commits
         )
+
+    def _get_covered_loc(self, test: Test) -> int:
+        result = sum(len(coverage.lines_covered) for coverage in self._data_coverages[test.id].values())
+
+        return result if result else 1
 
     def _get_commit_time_diff(self, commit: Commit) -> int:
         latest_commit = self._data_commits[self._target_commit.hash]
@@ -218,6 +293,13 @@ def main():
     projects = session.query(Project).all()
     calc = CalculateMetric()
 
+    results = {
+        method: []
+        for method in PrioritizeMethod.__members__.values()
+    }
+
+    corr = None
+
     for project in projects:
         commits = session.query(Commit).filter_by(
             project_id=project.id
@@ -231,10 +313,22 @@ def main():
             if not pri.has_failed_test:
                 continue
 
-            print(commit.hash)
-            results = pri.by_all()
-            for method, tests in results.items():
-                print(method, calc.calculate(tests))
+            commit_results = pri.by_all()
+            commit_corr = pd.DataFrame(pri.get_raw_values())
+            if corr is not None:
+                corr = pd.concat([corr, commit_corr])
+            else:
+                corr = commit_corr
+
+            for method, tests in commit_results.items():
+                results[method].append(calc.calculate(tests))
+
+    print(len(results[PrioritizeMethod.CommitAheadSum]))
+    for method, metrics in results.items():
+        #print(method, sum(metrics) / len(metrics))
+        print(method, round(sum(metrics) / len(metrics), 2))
+
+    print(round(corr.corr(), 2))
 
 
 if __name__ == '__main__':
