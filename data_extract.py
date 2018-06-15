@@ -216,7 +216,7 @@ class DataExtractor:
                     try:
                         coverages = self._collect_coverages(coverage_report_file)
                     except Exception:
-                        self.__logger.info("Something wrong with TCs. Skip the rest routines")
+                        self.__logger.info("Something wrong with coverages. Skip the rest routines")
                         continue
 
                     every_files.update(coverages)
